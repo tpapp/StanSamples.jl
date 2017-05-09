@@ -2,9 +2,9 @@
 language: julia
 os:
   - linux
-  - osx
+#  - osx
 julia:
-  - release
+#  - release
   - nightly
 notifications:
   email: false
