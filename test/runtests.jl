@@ -46,4 +46,5 @@ end
         [Var(:a), Var(:b, 2), Var(:c)]
     @test combine_vars(parse_varname.(["a", "b.1.1", "b.2.1", "b.1.2", "b.2.2", "c"])) ==
         [Var(:a), Var(:b, 2, 2), Var(:c)]
+    @test_throws ArgumentError combine_vars(parse_varname.(["a", "b.1", "b.2.1", "c"]))
 end
