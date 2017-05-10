@@ -7,34 +7,31 @@ iscommentline(s::String) = ismatch(r"^ *#", s)
 
 fields(s::String) = split(s, ',')
 
-abstract type HeaderVar end
-
-@auto_hash_equals struct ScalarVar <: HeaderVar
-    name::Symbol
-end
-
-@auto_hash_equals struct IndexedVar{N} <: HeaderVar
+"""
+A variable in the posterior sample. `name` is the name, and `index` is
+the indices following it. When combined after parsing the header,
+`index` is the size of the array that is to be read.
+"""
+@auto_hash_equals struct Var{N}
     name::Symbol
     index::CartesianIndex{N}
 end
 
-IndexedVar(name::Symbol, index::Int...) = IndexedVar(name, CartesianIndex(tuple(index...)))
+Var(name::Symbol, index::Int...) = Var(name, CartesianIndex(tuple(index...)))
+
+"Test if two `Var`s can be merged (same name and number of indices)."
+≅(::Var, ::Var) = false
+
+≅{N}(v1::Var{N}, v2::Var{N}) = v1.name == v2.name
+
 
 function parse_varname(s::String)
     s = split(s, ".")
     name = Symbol(s[1])
-    if length(s) > 1
-        indexes = parse.(Int, s[2:end])
-        @argcheck all(indexes .≥ 1) "Non-positive index in $(s)."
-        IndexedVar(name, indexes...)
-    else
-        ScalarVar(name)
-    end
+    indexes = parse.(Int, s[2:end])
+    @argcheck all(indexes .≥ 1) "Non-positive index in $(s)."
+    Var(name, indexes...)
 end
-
-combine_vars(vars) = _combine_vars(vars[1], vars)
-
-_combine_vars(var::ScalarVar, vars) = var, 1
 
 function combined_size(indexes)
     siz = reduce(max, indexes)
@@ -44,18 +41,18 @@ function combined_size(indexes)
     siz
 end
 
-function _combine_vars{N}(var::IndexedVar{N}, vars)
-    name = var.name
-    len = findfirst(v -> v.name != name, vars)
+function _combine_vars(vars)
+    var = first(vars)
+    len = findfirst(v -> !(v ≅ var), vars)
     len = len == 0 ? length(vars) : len-1
-    IndexedVar(name, combined_size(v.index for v in vars[1:len])), len
+    Var(var.name, combined_size(v.index for v in vars[1:len])), len
 end
 
-function parse_header(vars)
-    header = HeaderVar[]
+function combine_vars(vars)
+    header = Var[]
     position = 1
     while position ≤ length(vars)
-        v, len = combine_vars(@view vars[position:end])
+        v, len = _combine_vars(@view vars[position:end])
         @argcheck v.name ∉ (h.name for h in header) "Duplicate variable $(v.name)."
         position += len
         push!(header, v)

@@ -2,11 +2,10 @@ using StanSamples
 import StanSamples:
     iscommentline,
     fields,
-    ScalarVar,
-    IndexedVar,
+    Var,
     parse_varname,
     combined_size,
-    parse_header
+    combine_vars
 using Base.Test
 
 @testset "raw reading" begin
@@ -22,10 +21,10 @@ using Base.Test
 end
 
 @testset "parsing variable names" begin
-    @test parse_varname("a") == ScalarVar(:a)
-    @test parse_varname("b99") == ScalarVar(:b99)
-    @test parse_varname("accept_stat__") == ScalarVar(:accept_stat__)
-    @test parse_varname("a.1.2.3") == IndexedVar(:a, 1, 2, 3)
+    @test parse_varname("a") == Var(:a)
+    @test parse_varname("b99") == Var(:b99)
+    @test parse_varname("accept_stat__") == Var(:accept_stat__)
+    @test parse_varname("a.1.2.3") == Var(:a, 1, 2, 3)
     @test_throws ArgumentError parse_varname("a.foo")
     @test_throws ArgumentError parse_varname("a.0")
     @test_throws ArgumentError parse_varname("a.0.")
@@ -40,11 +39,11 @@ end
 end
 
 @testset "parsing header" begin
-    let h = ScalarVar.([:a, :b, :c])
-        @test parse_header(h) == h
+    let h = Var.([:a, :b, :c])
+        @test combine_vars(h) == h
     end
-    @test parse_header(parse_varname.(["a", "b.1", "b.2", "c"])) ==
-        [ScalarVar(:a), IndexedVar(:b, 2), ScalarVar(:c)]
-    @test parse_header(parse_varname.(["a", "b.1.1", "b.2.1", "b.1.2", "b.2.2", "c"])) ==
-        [ScalarVar(:a), IndexedVar(:b, 2, 2), ScalarVar(:c)]
+    @test combine_vars(parse_varname.(["a", "b.1", "b.2", "c"])) ==
+        [Var(:a), Var(:b, 2), Var(:c)]
+    @test combine_vars(parse_varname.(["a", "b.1.1", "b.2.1", "b.1.2", "b.2.2", "c"])) ==
+        [Var(:a), Var(:b, 2, 2), Var(:c)]
 end
