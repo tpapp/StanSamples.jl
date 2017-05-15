@@ -3,61 +3,177 @@ module StanSamples
 using ArgCheck
 using AutoHashEquals
 
+"""
+Test if the argument is a comment line in Stan sample output.
+"""
 iscommentline(s::String) = ismatch(r"^ *#", s)
 
-fields(s::String) = split(s, ',')
+"""
+Return the fields of a line in Stan sample output. The format is CSV,
+but never quoted or escaped, so splitting on `,` is sufficient.
+"""
+fields(line::String) = split(chomp(line), ',')
 
 """
-A variable in the posterior sample. `name` is the name, and `index` is
-the indices following it. When combined after parsing the header,
-`index` is the size of the array that is to be read.
+Specification of a variable in the column of the posterior sample.
+
+# Fields
+- `name` is the name
+- `index` is the indices following it (may be empty).
 """
-@auto_hash_equals struct Var{N}
+@auto_hash_equals struct ColVar{N}
     name::Symbol
     index::CartesianIndex{N}
 end
 
-Var(name::Symbol, index::Int...) = Var(name, CartesianIndex(tuple(index...)))
+ColVar(name::Symbol, index::Int...) = ColVar(name, CartesianIndex(tuple(index...)))
 
-"Test if two `Var`s can be merged (same name and number of indices)."
-≅(::Var, ::Var) = false
+"Test if two `ColVar`s can be merged (same `name` and number of indices)."
+≅(::ColVar, ::ColVar) = false
+≅{N}(v1::ColVar{N}, v2::ColVar{N}) = v1.name == v2.name
 
-≅{N}(v1::Var{N}, v2::Var{N}) = v1.name == v2.name
-
-
-function parse_varname(s::String)
+"""
+Parse a string as a column variable. 
+"""
+function ColVar(s::String)
     s = split(s, ".")
     name = Symbol(s[1])
     indexes = parse.(Int, s[2:end])
     @argcheck all(indexes .≥ 1) "Non-positive index in $(s)."
-    Var(name, indexes...)
+    ColVar(name, indexes...)
 end
 
+"""
+    combined_size(indexes)
+
+For a vector of indexes, calculate the size (the largest one) and
+check that they are contiguous and column-major. Return a tuple of
+`Int`s, which is empty for scalars.
+"""
 function combined_size(indexes)
     siz = reduce(max, indexes)
     ran = CartesianRange(siz)
     # FIXME inelegant collect below
     @argcheck collect(indexes) == vec(collect(ran)) "Non-contiguous indexes."
-    siz
+    siz.I
 end
 
-function _combine_vars(vars)
-    var = first(vars)
-    len = findfirst(v -> !(v ≅ var), vars)
-    len = len == 0 ? length(vars) : len-1
-    Var(var.name, combined_size(v.index for v in vars[1:len])), len
+"""
+A variable denoting a Stan value, combined from adjacent columns of
+with the same variable name. Always has a `name::Symbol`
+field. Determines the type of the resulting values.
+"""
+abstract type StanVar end
+
+"""
+A scalar (always Float64).
+"""
+struct StanScalar <: StanVar
+    name::Symbol
 end
 
-function combine_vars(vars)
-    header = Var[]
+"""
+An array (always of Float64 elements).
+"""
+struct StanArray{N} <: StanVar
+    name::Symbol
+    size::NTuple{N, Int}
+end
+
+# this is a shorthand, mainly useful for unit tests
+StanArray(name::Symbol, size::Int...) = StanArray(name, size)
+
+"""
+Type of the value that corresponds to a `Var`.
+"""
+valuetype(::StanScalar) = Float64
+valuetype{N}(::StanArray{N}) = Array{Float64, N}
+
+"""
+Number of columns that correspond to the variable.
+"""
+ncols(::StanScalar) = 1
+ncols(sa::StanArray) = prod(sa.size)
+
+"""
+Combine column variables into a Stan variable.
+"""
+function _combine_colvars(colvars)
+    var = first(colvars)
+    len = findfirst(v -> !(v ≅ var), colvars)
+    len = len == 0 ? length(colvars) : len-1
+    siz = combined_size(v.index for v in colvars[1:len])
+    if isempty(siz)
+        StanScalar(var.name)
+    else
+        StanArray(var.name, siz)
+    end
+end
+
+"""
+    combine_colvars(colvars)
+
+Combine column variables, returning a vector of `StanVar`s.
+"""
+function combine_colvars(colvars)
+    header = StanVar[]
     position = 1
-    while position ≤ length(vars)
-        v, len = _combine_vars(@view vars[position:end])
+    while position ≤ length(colvars)
+        v = _combine_colvars(@view colvars[position:end])
         @argcheck v.name ∉ (h.name for h in header) "Duplicate variable $(v.name)."
-        position += len
+        position += ncols(v)
         push!(header, v)
     end
     header
+end
+
+"""
+    _read_values(var, fields)
+
+Read values for `var` from `fields`, starting at index `1`.
+"""
+_read_values(var::StanScalar, fields) = fields[1]
+
+function _read_values(var::StanArray, fields)
+    a = Array{Float64}(var.size...)
+    a[:] .= fields[1:length(a)]
+    a
+end
+
+"""
+    var_value_dict(vars)
+
+Create an empty dictionary for variable values.
+"""
+function var_value_dict(vars)
+    Dict([var.name => Vector{valuetype(var)}() for var in vars])
+end
+
+"""
+    read_values(io, vars, var_value_dict)
+
+Read values from a single line of `io` using the variable
+specification `vars`.
+
+The fields are combined into variables and appended into the
+corresponding vectors in `var_value_dict`.
+
+Return `false` for comment lines, `true` lines with data. All other
+cases (ie incomplete lines) throw an error. Note that in this case the
+vectors in `var_value_dict` may have an inconsistent length.
+"""
+function read_values(io, vars, var_value_dict, buffer = Array{Float64}(sum(ncols.(vars))))
+    line = readline(io)
+    iscommentline(line) && return false
+    buffer .= parse.(Float64, fields(line))
+    position = 1
+    for var in vars
+        a = _read_values(var, @view buffer[position:end])
+        push!(var_value_dict[var.name], a)
+        position += ncols(var)
+    end
+    @assert position == length(buffer) + 1 "Fields remaining after parsing."
+    true
 end
 
 end # module
