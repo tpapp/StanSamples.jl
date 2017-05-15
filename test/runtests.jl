@@ -125,3 +125,13 @@ end
     @test length(α) == N
     @test all(size(a) == (3,5) for a in α)
 end
+
+@testset "empty file (no header)" begin
+    mktemp() do path, io
+        write(io, """
+# empty file
+# just comments
+""")
+        @test_throws ErrorException read_samples(path)
+    end
+end
