@@ -208,7 +208,7 @@ function read_samples(filename; options...)
                 colvars = ColVar.(fields(line))
                 vars = combine_colvars(colvars; options...)
                 var_value_dict = empty_var_value_dict(vars)
-                buffer = Vector{Float64}(sum(ncols.(vars)))
+                buffer = Vector{Float64}(sum(ncols, vars))
                 return _read_samples(io, vars, var_value_dict, buffer)
             end
         end

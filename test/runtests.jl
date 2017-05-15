@@ -94,9 +94,9 @@ end
 1.0,foo,3.0,4.0,5.0,6.0,7.0,8.0
 """)
     vars = [StanScalar(:a), StanArray(:b, 3), StanArray(:c, 2, 2)]
-    @test sum(ncols.(vars)) == 8
+    @test sum(ncols, vars) == 8
     vars_values = empty_var_value_dict(vars)
-    buffer = Vector{Float64}(sum(ncols.(vars)))
+    buffer = Vector{Float64}(sum(ncols, vars))
     @test read_values(io, vars, vars_values, buffer)
     @test vars_values == Dict(:a => [1.0], :b => [[2.0, 3.0, 4.0]],
                               :c => [[5.0 7.0; 6.0 8.0]])
