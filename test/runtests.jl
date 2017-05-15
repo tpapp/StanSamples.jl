@@ -10,7 +10,7 @@ import StanSamples:
     combine_colvars,
     valuetype,
     ncols,
-    var_value_dict,
+    empty_var_value_dict,
     _read_values,
     read_values
 using Base.Test
@@ -71,10 +71,10 @@ end
 
 @testset "empty var dictionary" begin
     vars = [StanScalar(:A), StanArray(:B,1), StanArray(:C,1,2), StanArray(:D,1,2,3)]
-    @test var_value_dict(vars) == Dict(:A => Vector{Float64}(0),
-                                       :B => Vector{Vector{Float64}}(0),
-                                       :C => Vector{Matrix{Float64}}(0),
-                                       :D => Vector{Array{Float64, 3}}(0))
+    @test empty_var_value_dict(vars) == Dict(:A => Vector{Float64}(0),
+                                             :B => Vector{Vector{Float64}}(0),
+                                             :C => Vector{Matrix{Float64}}(0),
+                                             :D => Vector{Array{Float64, 3}}(0))
 end
 
 @testset "_read_values" begin
@@ -95,7 +95,7 @@ end
 """)
     vars = [StanScalar(:a), StanArray(:b, 3), StanArray(:c, 2, 2)]
     @test sum(ncols.(vars)) == 8
-    vars_values = var_value_dict(vars)
+    vars_values = empty_var_value_dict(vars)
     buffer = Vector{Float64}(sum(ncols.(vars)))
     @test read_values(io, vars, vars_values, buffer)
     @test vars_values == Dict(:a => [1.0], :b => [[2.0, 3.0, 4.0]],
@@ -108,4 +108,20 @@ end
     @test_throws DimensionMismatch read_values(io, vars, vars_values, buffer)
     # parser error
     @test_throws ArgumentError read_values(io, vars, vars_values, buffer)
+end
+
+@testset "read samples" begin
+    samples = read_samples(Pkg.dir("StanSamples", "test", "testmodel", "test-samples-1.csv"))
+    scalar_vars = [:lp__,:accept_stat__,:stepsize__,:treedepth__,:n_leapfrog__,
+                   :divergent__,:energy__,:mu,:sigma, :nu]
+    @test Set(keys(samples)) == Set(vcat(scalar_vars, :alpha))
+    N = 1000                    # hardcoded
+    for v in scalar_vars
+        @test isa(samples[v], Vector{Float64})
+        @test length(samples[v]) == N
+    end
+    α = samples[:alpha]
+    @test isa(α, Vector{Matrix{Float64}})
+    @test length(α) == N
+    @test all(size(a) == (3,5) for a in α)
 end

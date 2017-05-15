@@ -2,6 +2,5 @@
 *.jl.*.cov
 *.jl.mem
 /test/testmodel/test
-/test/testmodel/test-samples-1.csv
 /test/testmodel/test.data.R
 /test/testmodel/test.hpp

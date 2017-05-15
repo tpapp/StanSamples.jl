@@ -3,6 +3,8 @@ module StanSamples
 using ArgCheck
 using AutoHashEquals
 
+export read_samples
+
 """
 Test if the argument is a comment line in Stan sample output.
 """
@@ -35,7 +37,7 @@ ColVar(name::Symbol, index::Int...) = ColVar(name, CartesianIndex(tuple(index...
 """
 Parse a string as a column variable. 
 """
-function ColVar(s::String)
+function ColVar(s::AbstractString)
     s = split(s, ".")
     name = Symbol(s[1])
     indexes = parse.(Int, s[2:end])
@@ -97,8 +99,10 @@ ncols(sa::StanArray) = prod(sa.size)
 
 """
 Combine column variables into a Stan variable.
+
+For the documentation of `options`, see [`combine_colvars`](@ref).
 """
-function _combine_colvars(colvars)
+function _combine_colvars(colvars; options...)
     var = first(colvars)
     len = findfirst(v -> !(v ≅ var), colvars)
     len = len == 0 ? length(colvars) : len-1
@@ -111,15 +115,17 @@ function _combine_colvars(colvars)
 end
 
 """
-    combine_colvars(colvars)
+    combine_colvars(colvars; options...)
 
 Combine column variables, returning a vector of `StanVar`s.
+
+`options` are not used at the moment.
 """
-function combine_colvars(colvars)
+function combine_colvars(colvars; options...)
     header = StanVar[]
     position = 1
     while position ≤ length(colvars)
-        v = _combine_colvars(@view colvars[position:end])
+        v = _combine_colvars(@view colvars[position:end]; options...)
         @argcheck v.name ∉ (h.name for h in header) "Duplicate variable $(v.name)."
         position += ncols(v)
         push!(header, v)
@@ -130,13 +136,13 @@ end
 """
     _read_values(var, fields)
 
-Read values for `var` from `fields`, starting at index `1`.
+Read values for `var` from `buffer`, starting at index `1`.
 """
-_read_values(var::StanScalar, fields) = fields[1]
+_read_values(var::StanScalar, buffer) = buffer[1]
 
-function _read_values(var::StanArray, fields)
+function _read_values(var::StanArray, buffer)
     a = Array{Float64}(var.size...)
-    a[:] .= fields[1:length(a)]
+    a[:] .= buffer[1:length(a)]
     a
 end
 
@@ -145,7 +151,7 @@ end
 
 Create an empty dictionary for variable values.
 """
-function var_value_dict(vars)
+function empty_var_value_dict(vars)
     Dict([var.name => Vector{valuetype(var)}() for var in vars])
 end
 
@@ -162,7 +168,7 @@ Return `false` for comment lines, `true` lines with data. All other
 cases (ie incomplete lines) throw an error. Note that in this case the
 vectors in `var_value_dict` may have an inconsistent length.
 """
-function read_values(io, vars, var_value_dict, buffer = Array{Float64}(sum(ncols.(vars))))
+function read_values(io, vars, var_value_dict, buffer)
     line = readline(io)
     iscommentline(line) && return false
     buffer .= parse.(Float64, fields(line))
@@ -174,6 +180,40 @@ function read_values(io, vars, var_value_dict, buffer = Array{Float64}(sum(ncols
     end
     @assert position == length(buffer) + 1 "Fields remaining after parsing."
     true
+end
+
+"""
+Helper function to read data from a Stan samples CSV file.
+"""
+function _read_samples(io, vars, var_value_dict, buffer)
+    while !eof(io)
+        read_values(io, vars, var_value_dict, buffer)
+    end
+    var_value_dict
+end
+
+"""
+    read_samples(filename)
+
+Read data from a Stan samples CSV file.
+
+Keyword arguments `options` are used for parsing the variable names,
+see [`combine_colvars`](@ref).
+"""
+function read_samples(filename; options...)
+    open(filename, "r") do io
+        while !eof(io)
+            line = readline(io)
+            if !iscommentline(line)
+                colvars = ColVar.(fields(line))
+                vars = combine_colvars(colvars; options...)
+                var_value_dict = empty_var_value_dict(vars)
+                buffer = Vector{Float64}(sum(ncols.(vars)))
+                return _read_samples(io, vars, var_value_dict, buffer)
+            end
+        end
+        error("Could not find non-empty lines.")
+    end
 end
 
 end # module
