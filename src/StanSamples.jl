@@ -143,7 +143,7 @@ end
 """
 $(SIGNATURES)
 
-Combine column variables, returning a vector of `StanVar`s.
+Combine column variables, returning a `Tuple` of `StanVar`s.
 """
 function combine_colvars(colvars)
     header = StanVar[]
@@ -154,11 +154,11 @@ function combine_colvars(colvars)
         position += ncols(v)
         push!(header, v)
     end
-    header
+    tuple(header...)
 end
 
 """
-    _read_values(var, fields)
+$(SIGNATURES)
 
 Read values for `var` from `buffer`, starting at index `1`.
 """
@@ -171,35 +171,38 @@ function _read_values(var::StanArray, buffer)
 end
 
 """
-    var_value_dict(vars)
+$(SIGNATURES)
 
-Create an empty dictionary for variable values.
+Create an empty container for variable values, accessed by variable names.
 """
-function empty_var_value_dict(vars)
-    Dict([var.name => Vector{valuetype(var)}() for var in vars])
+function empty_vars_values(vars::Tuple)
+    NamedTuple{map(var -> var.name, vars)}(map(var -> Vector{valuetype(var)}(), vars))
 end
 
 """
-    read_values(io, vars, var_value_dict)
+$(SIGNATURES)
 
 Read values from a single line of `io` using the variable
 specification `vars`.
 
 The fields are combined into variables and appended into the
-corresponding vectors in `var_value_dict`.
+corresponding vectors in `vars_values`.
 
 Return `false` for comment lines, `true` lines with data. All other
 cases (ie incomplete lines) throw an error. Note that in this case the
-vectors in `var_value_dict` may have an inconsistent length.
+vectors in `vars_values` may have an inconsistent length.
+
+`buffer` is pre-allocated for reading in a line at a time.
 """
-function read_values(io, vars, var_value_dict, buffer)
+function read_values(io::IO, vars::Tuple, vars_values::NamedTuple,
+                     buffer::Vector{Float64} = Vector{Float64}(undef, length(vars)))
     line = readline(io)
     iscommentline(line) && return false
     buffer .= parse.(Float64, fields(line))
     position = 1
     for var in vars
         a = _read_values(var, @view buffer[position:end])
-        push!(var_value_dict[var.name], a)
+        push!(vars_values[var.name], a)
         position += ncols(var)
     end
     @assert position == length(buffer) + 1 "Fields remaining after parsing."
@@ -207,34 +210,38 @@ function read_values(io, vars, var_value_dict, buffer)
 end
 
 """
+$(SIGNATURES)
+
 Helper function to read data from a Stan samples CSV file.
 """
-function _read_samples(io, vars, var_value_dict, buffer)
+function _read_samples(io, vars, vars_values, buffer)
     while !eof(io)
-        read_values(io, vars, var_value_dict, buffer)
+        read_values(io, vars, vars_values, buffer)
     end
-    var_value_dict
+    vars_values
+end
+
+function read_samples(io::IO)
+    while !eof(io)
+        line = readline(io)
+        if !iscommentline(line)
+            colvars = ColVar.(fields(line))
+            vars = combine_colvars(colvars)
+            vars_values = empty_vars_values(vars)
+            buffer = Vector{Float64}(undef, sum(ncols, vars))
+            return _read_samples(io, vars, vars_values, buffer)
+        end
+    end
+    error("Could not find non-empty lines.")
 end
 
 """
 $(SIGNATURES)
 
-Read Stan samples from a CSV file.
+Read Stan samples from a CSV file or a `IO` stream.
+
+
 """
-function read_samples(filename)
-    open(filename, "r") do io
-        while !eof(io)
-            line = readline(io)
-            if !iscommentline(line)
-                colvars = ColVar.(fields(line))
-                vars = combine_colvars(colvars)
-                var_value_dict = empty_var_value_dict(vars)
-                buffer = Vector{Float64}(undef, sum(ncols, vars))
-                return _read_samples(io, vars, var_value_dict, buffer)
-            end
-        end
-        error("Could not find non-empty lines.")
-    end
-end
+read_samples(filename::AbstractString) = open(read_samples, filename, "r")
 
 end # module

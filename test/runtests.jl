@@ -2,7 +2,7 @@ using StanSamples, Test
 
 import StanSamples: # test internals
     iscommentline, fields, ColVar, combined_size, StanVar, StanScalar, StanArray,
-    combine_colvars, valuetype, ncols, empty_var_value_dict, _read_values, read_values
+    combine_colvars, valuetype, ncols, empty_vars_values, _read_values, read_values
 
 @testset "raw reading" begin
     @test iscommentline("# this is a comment")
@@ -36,12 +36,12 @@ end
 
 @testset "parsing header" begin
     let h = ColVar.([:a, :b, :c])
-        @test combine_colvars(h) == [StanScalar(s) for s in [:a, :b, :c]]
+        @test combine_colvars(h) == StanScalar.((:a, :b, :c))
     end
     @test combine_colvars(ColVar.(["a", "b.1", "b.2", "c"])) ==
-        [StanScalar(:a), StanArray(:b, (2,)), StanScalar(:c)]
+        (StanScalar(:a), StanArray(:b, (2,)), StanScalar(:c))
     @test combine_colvars(ColVar.(["a", "b.1.1", "b.2.1", "b.1.2", "b.2.2", "c"])) ==
-        [StanScalar(:a), StanArray(:b, (2, 2)), StanScalar(:c)]
+        (StanScalar(:a), StanArray(:b, (2, 2)), StanScalar(:c))
     @test_throws ArgumentError combine_colvars(ColVar.(["a", "b.1", "b.2.1", "c"]))
 end
 
@@ -59,11 +59,11 @@ end
 end
 
 @testset "empty var dictionary" begin
-    vars = [StanScalar(:A), StanArray(:B,1), StanArray(:C,1,2), StanArray(:D,1,2,3)]
-    @test empty_var_value_dict(vars) == Dict(:A => Vector{Float64}(),
-                                             :B => Vector{Vector{Float64}}(),
-                                             :C => Vector{Matrix{Float64}}(),
-                                             :D => Vector{Array{Float64, 3}}())
+    vars = (StanScalar(:A), StanArray(:B,1), StanArray(:C,1,2), StanArray(:D,1,2,3))
+    @test empty_vars_values(vars) == (A = Vector{Float64}(),
+                                      B = Vector{Vector{Float64}}(),
+                                      C = Vector{Matrix{Float64}}(),
+                                      D = Vector{Array{Float64, 3}}())
 end
 
 @testset "_read_values" begin
@@ -82,13 +82,12 @@ end
 1.0,2.0,3.0,4.0,5.0,6.0,7.0
 1.0,foo,3.0,4.0,5.0,6.0,7.0,8.0
 """)
-    vars = [StanScalar(:a), StanArray(:b, 3), StanArray(:c, 2, 2)]
+    vars = (StanScalar(:a), StanArray(:b, 3), StanArray(:c, 2, 2))
     @test sum(ncols, vars) == 8
-    vars_values = empty_var_value_dict(vars)
+    vars_values = empty_vars_values(vars)
     buffer = Vector{Float64}(undef, sum(ncols, vars))
     @test read_values(io, vars, vars_values, buffer)
-    @test vars_values == Dict(:a => [1.0], :b => [[2.0, 3.0, 4.0]],
-                              :c => [[5.0 7.0; 6.0 8.0]])
+    @test vars_values == (a = [1.0], b = [[2.0, 3.0, 4.0]], c = [[5.0 7.0; 6.0 8.0]])
     # comment line
     @test !read_values(io, vars, vars_values, buffer)
     # line too long
@@ -99,7 +98,19 @@ end
     @test_throws ArgumentError read_values(io, vars, vars_values, buffer)
 end
 
-@testset "read samples" begin
+@testset "read samples simple" begin
+    io = IOBuffer("""
+a,b.1,b.2,c.1.1,c.2.1,c.1.2,c.2.2
+1.0,2.0,3.0,4.0,5.0,6.0,7.0
+8.0,9.0,10.0,11.0,12.0,13.0,14.0
+""")
+    samples = read_samples(io)
+    @test samples.a == [1.0, 8.0]
+    @test samples.b == [[2.0, 3.0],
+                        [9.0, 10.0]]
+end
+
+@testset "read samples large" begin
     samples = read_samples(joinpath(@__DIR__, "testmodel", "test-samples-1.csv"))
     scalar_vars = [:lp__,:accept_stat__,:stepsize__,:treedepth__,:n_leapfrog__,
                    :divergent__,:energy__,:mu,:sigma, :nu]
