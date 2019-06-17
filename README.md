@@ -6,7 +6,7 @@
 ![Lifecycle](https://img.shields.io/badge/lifecycle-retired-orange.svg)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-archived-red.svg)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-dormant-blue.svg) -->
-[![Build Status](https://travis-ci.com/tpapp/StanSamples.jl.svg?branch=master)](https://travis-ci.com/tpapp/StanSamples.jl)
+[![Build Status](https://travis-ci.org/tpapp/StanSamples.jl.svg?branch=master)](https://travis-ci.org/tpapp/StanSamples.jl)
 [![codecov.io](http://codecov.io/github/tpapp/StanSamples.jl/coverage.svg?branch=master)](http://codecov.io/github/tpapp/StanSamples.jl?branch=master)
 
 Read Stan samples from a CSV file. Columns that belong to the same variable are grouped into arrays.
