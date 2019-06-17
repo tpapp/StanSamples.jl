@@ -1,19 +1,8 @@
-using StanSamples
-import StanSamples:
-    iscommentline,
-    fields,
-    ColVar,
-    combined_size,
-    StanVar,
-    StanScalar,
-    StanArray,
-    combine_colvars,
-    valuetype,
-    ncols,
-    empty_var_value_dict,
-    _read_values,
-    read_values
-using Test
+using StanSamples, Test
+
+import StanSamples: # test internals
+    iscommentline, fields, ColVar, combined_size, StanVar, StanScalar, StanArray,
+    combine_colvars, valuetype, ncols, empty_var_value_dict, _read_values, read_values
 
 @testset "raw reading" begin
     @test iscommentline("# this is a comment")

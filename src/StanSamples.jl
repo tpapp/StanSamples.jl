@@ -127,10 +127,8 @@ ncols(sa::StanArray) = prod(sa.size)
 $(SIGNATURES)
 
 Combine column variables into a Stan variable.
-
-For the documentation of `options`, see [`combine_colvars`](@ref).
 """
-function _combine_colvars(colvars; options...)
+function _combine_colvars(colvars)
     var = first(colvars)
     len = findfirst(v -> !(v ≅ var), colvars)
     len = len ≡ nothing ? length(colvars) : len - 1
@@ -143,17 +141,15 @@ function _combine_colvars(colvars; options...)
 end
 
 """
-    $(SIGNATURES)
+$(SIGNATURES)
 
 Combine column variables, returning a vector of `StanVar`s.
-
-`options` are not used at the moment.
 """
-function combine_colvars(colvars; options...)
+function combine_colvars(colvars)
     header = StanVar[]
     position = 1
     while position ≤ length(colvars)
-        v = _combine_colvars(@view colvars[position:end]; options...)
+        v = _combine_colvars(@view colvars[position:end])
         @argcheck v.name ∉ (h.name for h in header) "Duplicate variable $(v.name)."
         position += ncols(v)
         push!(header, v)
@@ -221,20 +217,17 @@ function _read_samples(io, vars, var_value_dict, buffer)
 end
 
 """
-    read_samples(filename)
+$(SIGNATURES)
 
-Read data from a Stan samples CSV file.
-
-Keyword arguments `options` are used for parsing the variable names,
-see [`combine_colvars`](@ref).
+Read Stan samples from a CSV file.
 """
-function read_samples(filename; options...)
+function read_samples(filename)
     open(filename, "r") do io
         while !eof(io)
             line = readline(io)
             if !iscommentline(line)
                 colvars = ColVar.(fields(line))
-                vars = combine_colvars(colvars; options...)
+                vars = combine_colvars(colvars)
                 var_value_dict = empty_var_value_dict(vars)
                 buffer = Vector{Float64}(undef, sum(ncols, vars))
                 return _read_samples(io, vars, var_value_dict, buffer)
