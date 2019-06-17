@@ -1,3 +1,9 @@
+"""
+Read Stan samples from a CSV file. Columns that belong to the same variable are grouped into
+arrays.
+
+The single exported function is [`read_samples`](@ref).
+"""
 module StanSamples
 
 export read_samples
