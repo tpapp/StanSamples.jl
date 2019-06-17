@@ -2,7 +2,7 @@ using StanSamples, Test
 
 import StanSamples: # test internals
     iscommentline, fields, ColVar, combined_size, StanVar, StanScalar, StanArray,
-    combine_colvars, valuetype, ncols, empty_vars_values, _read_values, read_values
+    combine_colvars, empty_values, ncols, empty_vars_values, _read_values, read_values
 
 @testset "raw reading" begin
     @test iscommentline("# this is a comment")
@@ -48,22 +48,22 @@ end
 @testset "variable types" begin
     a = StanScalar(:A)
     b, c, d = [StanArray(arg...) for arg in [(:B,2), (:C,2,3), (:D,2,3,5)]]
-    @test valuetype(a) == Float64
+    @test empty_values(a) == Vector{Float64}()
     @test ncols(a) == 1
-    @test valuetype(b) == Vector{Float64}
+    @test empty_values(b) == Matrix{Float64}(undef, 2, 0)
     @test ncols(b) == 2
-    @test valuetype(c) == Matrix{Float64}
+    @test empty_values(c) == Array{Float64,3}(undef, 2, 3, 0)
     @test ncols(c) == 6
-    @test valuetype(d) == Array{Float64, 3}
+    @test empty_values(d) == Array{Float64,4}(undef, 2, 3, 5, 0)
     @test ncols(d) == 30
 end
 
-@testset "empty var dictionary" begin
+@testset "empty var named tuple" begin
     vars = (StanScalar(:A), StanArray(:B,1), StanArray(:C,1,2), StanArray(:D,1,2,3))
     @test empty_vars_values(vars) == (A = Vector{Float64}(),
-                                      B = Vector{Vector{Float64}}(),
-                                      C = Vector{Matrix{Float64}}(),
-                                      D = Vector{Array{Float64, 3}}())
+                                      B = Matrix{Float64}(undef, 1, 0),
+                                      C = Array{Float64,3}(undef, 1, 2, 0),
+                                      D = Array{Float64,4}(undef, 1, 2, 3, 0))
 end
 
 @testset "_read_values" begin
@@ -87,7 +87,8 @@ end
     vars_values = empty_vars_values(vars)
     buffer = Vector{Float64}(undef, sum(ncols, vars))
     @test read_values(io, vars, vars_values, buffer)
-    @test vars_values == (a = [1.0], b = [[2.0, 3.0, 4.0]], c = [[5.0 7.0; 6.0 8.0]])
+    @test vars_values == (a = [1.0], b = reshape(Float64.(2:4), 3, 1),
+                          c = reshape(Float64.(5:8), 2, 2, 1))
     # comment line
     @test !read_values(io, vars, vars_values, buffer)
     # line too long
@@ -106,8 +107,10 @@ a,b.1,b.2,c.1.1,c.2.1,c.1.2,c.2.2
 """)
     samples = read_samples(io)
     @test samples.a == [1.0, 8.0]
-    @test samples.b == [[2.0, 3.0],
-                        [9.0, 10.0]]
+    @test samples.b == permutedims([2.0 3.0;
+                                    9.0 10.0])
+    @test size(samples.c) == (2, 2, 2)
+    @test vec(samples.c) == Float64.(vcat(4:7, 11:14))
 end
 
 @testset "read samples large" begin
@@ -121,9 +124,8 @@ end
         @test length(samples[v]) == N
     end
     α = samples[:alpha]
-    @test isa(α, Vector{Matrix{Float64}})
-    @test length(α) == N
-    @test all(size(a) == (3,5) for a in α)
+    @test isa(α, AbstractArray{Float64,3})
+    @test size(α) == (3, 5, N)
 end
 
 @testset "empty file (no header)" begin

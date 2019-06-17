@@ -4,6 +4,7 @@ export read_samples
 
 using ArgCheck: @argcheck
 using DocStringExtensions: FIELDS, SIGNATURES, TYPEDEF
+using ElasticArrays: ElasticArray
 
 ####
 #### utilities
@@ -110,10 +111,10 @@ StanArray(name::Symbol, size::Int...) = StanArray(name, size)
 """
 $(SIGNATURES)
 
-Type of the value that corresponds to a [`StanVar`](@ref).
+Empty values for a `var`, can be appended to using `append!`.
 """
-valuetype(::StanScalar) = Float64
-valuetype(::StanArray{N}) where {N} = Array{Float64, N}
+empty_values(var::StanScalar) = Vector{Float64}()
+empty_values(var::StanArray) = ElasticArray{Float64}(undef, var.size..., 0)
 
 """
 $(SIGNATURES)
@@ -176,7 +177,7 @@ $(SIGNATURES)
 Create an empty container for variable values, accessed by variable names.
 """
 function empty_vars_values(vars::Tuple)
-    NamedTuple{map(var -> var.name, vars)}(map(var -> Vector{valuetype(var)}(), vars))
+    NamedTuple{map(var -> var.name, vars)}(map(empty_values, vars))
 end
 
 """
@@ -202,7 +203,7 @@ function read_values(io::IO, vars::Tuple, vars_values::NamedTuple,
     position = 1
     for var in vars
         a = _read_values(var, @view buffer[position:end])
-        push!(vars_values[var.name], a)
+        append!(vars_values[var.name], a)
         position += ncols(var)
     end
     @assert position == length(buffer) + 1 "Fields remaining after parsing."
@@ -240,7 +241,37 @@ $(SIGNATURES)
 
 Read Stan samples from a CSV file or a `IO` stream.
 
+Return a container of arrays, accessed by variables names (eg like a `NamedTuple`, which is
+in fact the current implementation, but can possibly change). Each array has samples for a
+variable, with the last index varying for each draw.
 
+```jldoctest
+julia> io = IOBuffer("a,b.1,b.2,c.1.1,c.2.1,c.1.2,c.2.2\n" *
+                     "1.0,2.0,3.0,4.0,5.0,6.0,7.0\n" *
+                     "8.0,9.0,10.0,11.0,12.0,13.0,14.0");
+
+julia> samples = read_samples(io);
+
+julia> samples.a
+2-element Array{Float64,1}:
+ 1.0
+ 8.0
+
+julia> samples.b
+2×2 ElasticArrays.ElasticArray{Float64,2,1}:
+ 2.0   9.0
+ 3.0  10.0
+
+julia> samples.c
+2×2×2 ElasticArrays.ElasticArray{Float64,3,2}:
+[:, :, 1] =
+ 4.0  6.0
+ 5.0  7.0
+
+[:, :, 2] =
+ 11.0  13.0
+ 12.0  14.0
+```
 """
 read_samples(filename::AbstractString) = open(read_samples, filename, "r")
 
