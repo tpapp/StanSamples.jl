@@ -1,41 +1,59 @@
 module StanSamples
 
-using ArgCheck
-using AutoHashEquals
-
 export read_samples
 
-"""
-Test if the argument is a comment line in Stan sample output.
-"""
-iscommentline(s::String) = ismatch(r"^ *#", s)
+using ArgCheck: @argcheck
+using DocStringExtensions: FIELDS, SIGNATURES, TYPEDEF
+
+####
+#### utilities
+####
 
 """
+$(SIGNATURES)
+
+Test if the argument is a comment line in Stan sample output.
+"""
+iscommentline(s::String) = occursin(r"^ *#", s)
+
+"""
+$(SIGNATURES)
+
 Return the fields of a line in Stan sample output. The format is CSV,
 but never quoted or escaped, so splitting on `,` is sufficient.
 """
 fields(line::String) = split(chomp(line), ',')
 
 """
+$(SIGNATURES)
+
 Specification of a variable in the column of the posterior sample.
 
 # Fields
-- `name` is the name
-- `index` is the indices following it (may be empty).
+
+$(FIELDS)
 """
-@auto_hash_equals struct ColVar{N}
+struct ColVar{N}
+    "variable name"
     name::Symbol
+    "index (may be empty)"
     index::CartesianIndex{N}
 end
 
 ColVar(name::Symbol, index::Int...) = ColVar(name, CartesianIndex(tuple(index...)))
 
-"Test if two `ColVar`s can be merged (same `name` and number of indices)."
+"""
+$(SIGNATURES)
+
+Test if two `ColVar`s can be merged (same `name` and number of indices).
+"""
 ≅(::ColVar, ::ColVar) = false
-≅{N}(v1::ColVar{N}, v2::ColVar{N}) = v1.name == v2.name
+≅(v1::ColVar{N}, v2::ColVar{N}) where {N} = v1.name == v2.name
 
 """
-Parse a string as a column variable. 
+$(SIGNATURES)
+
+Parse a string as a column variable.
 """
 function ColVar(s::AbstractString)
     s = split(s, ".")
@@ -46,15 +64,15 @@ function ColVar(s::AbstractString)
 end
 
 """
-    combined_size(indexes)
+    $(SIGNATURES)
 
 For a vector of indexes, calculate the size (the largest one) and
 check that they are contiguous and column-major. Return a tuple of
-`Int`s, which is empty for scalars.
+`Int`s (empty for scalars.)
 """
 function combined_size(indexes)
     siz = reduce(max, indexes)
-    ran = CartesianRange(siz)
+    ran = CartesianIndices(siz)
     # FIXME inelegant collect below
     @argcheck collect(indexes) == vec(collect(ran)) "Non-contiguous indexes."
     siz.I
@@ -68,6 +86,8 @@ field. Determines the type of the resulting values.
 abstract type StanVar end
 
 """
+$(TYPEDEF)
+
 A scalar (always Float64).
 """
 struct StanScalar <: StanVar
@@ -75,6 +95,8 @@ struct StanScalar <: StanVar
 end
 
 """
+$(TYPEDEF)
+
 An array (always of Float64 elements).
 """
 struct StanArray{N} <: StanVar
@@ -86,26 +108,30 @@ end
 StanArray(name::Symbol, size::Int...) = StanArray(name, size)
 
 """
-Type of the value that corresponds to a `Var`.
+$(SIGNATURES)
+
+Type of the value that corresponds to a [`StanVar`](@ref).
 """
 valuetype(::StanScalar) = Float64
-valuetype{N}(::StanArray{N}) = Array{Float64, N}
+valuetype(::StanArray{N}) where {N} = Array{Float64, N}
 
 """
-Number of columns that correspond to the variable.
+$(SIGNATURES)
+
+Number of columns that correspond to a [`StanVar`](@ref).
 """
 ncols(::StanScalar) = 1
 ncols(sa::StanArray) = prod(sa.size)
 
 """
-Combine column variables into a Stan variable.
+$(SIGNATURES)
 
-For the documentation of `options`, see [`combine_colvars`](@ref).
+Combine column variables into a Stan variable.
 """
-function _combine_colvars(colvars; options...)
+function _combine_colvars(colvars)
     var = first(colvars)
     len = findfirst(v -> !(v ≅ var), colvars)
-    len = len == 0 ? length(colvars) : len-1
+    len = len ≡ nothing ? length(colvars) : len - 1
     siz = combined_size(v.index for v in colvars[1:len])
     if isempty(siz)
         StanScalar(var.name)
@@ -115,67 +141,68 @@ function _combine_colvars(colvars; options...)
 end
 
 """
-    combine_colvars(colvars; options...)
+$(SIGNATURES)
 
-Combine column variables, returning a vector of `StanVar`s.
-
-`options` are not used at the moment.
+Combine column variables, returning a `Tuple` of `StanVar`s.
 """
-function combine_colvars(colvars; options...)
+function combine_colvars(colvars)
     header = StanVar[]
     position = 1
     while position ≤ length(colvars)
-        v = _combine_colvars(@view colvars[position:end]; options...)
+        v = _combine_colvars(@view colvars[position:end])
         @argcheck v.name ∉ (h.name for h in header) "Duplicate variable $(v.name)."
         position += ncols(v)
         push!(header, v)
     end
-    header
+    tuple(header...)
 end
 
 """
-    _read_values(var, fields)
+$(SIGNATURES)
 
 Read values for `var` from `buffer`, starting at index `1`.
 """
 _read_values(var::StanScalar, buffer) = buffer[1]
 
 function _read_values(var::StanArray, buffer)
-    a = Array{Float64}(var.size...)
+    a = Array{Float64}(undef, var.size...)
     a[:] .= buffer[1:length(a)]
     a
 end
 
 """
-    var_value_dict(vars)
+$(SIGNATURES)
 
-Create an empty dictionary for variable values.
+Create an empty container for variable values, accessed by variable names.
 """
-function empty_var_value_dict(vars)
-    Dict([var.name => Vector{valuetype(var)}() for var in vars])
+function empty_vars_values(vars::Tuple)
+    NamedTuple{map(var -> var.name, vars)}(map(var -> Vector{valuetype(var)}(), vars))
 end
 
 """
-    read_values(io, vars, var_value_dict)
+$(SIGNATURES)
 
 Read values from a single line of `io` using the variable
 specification `vars`.
 
 The fields are combined into variables and appended into the
-corresponding vectors in `var_value_dict`.
+corresponding vectors in `vars_values`.
 
 Return `false` for comment lines, `true` lines with data. All other
 cases (ie incomplete lines) throw an error. Note that in this case the
-vectors in `var_value_dict` may have an inconsistent length.
+vectors in `vars_values` may have an inconsistent length.
+
+`buffer` is pre-allocated for reading in a line at a time.
 """
-function read_values(io, vars, var_value_dict, buffer)
+function read_values(io::IO, vars::Tuple, vars_values::NamedTuple,
+                     buffer::Vector{Float64} = Vector{Float64}(undef, length(vars)))
     line = readline(io)
     iscommentline(line) && return false
     buffer .= parse.(Float64, fields(line))
     position = 1
     for var in vars
         a = _read_values(var, @view buffer[position:end])
-        push!(var_value_dict[var.name], a)
+        push!(vars_values[var.name], a)
         position += ncols(var)
     end
     @assert position == length(buffer) + 1 "Fields remaining after parsing."
@@ -183,37 +210,38 @@ function read_values(io, vars, var_value_dict, buffer)
 end
 
 """
+$(SIGNATURES)
+
 Helper function to read data from a Stan samples CSV file.
 """
-function _read_samples(io, vars, var_value_dict, buffer)
+function _read_samples(io, vars, vars_values, buffer)
     while !eof(io)
-        read_values(io, vars, var_value_dict, buffer)
+        read_values(io, vars, vars_values, buffer)
     end
-    var_value_dict
+    vars_values
 end
 
-"""
-    read_samples(filename)
-
-Read data from a Stan samples CSV file.
-
-Keyword arguments `options` are used for parsing the variable names,
-see [`combine_colvars`](@ref).
-"""
-function read_samples(filename; options...)
-    open(filename, "r") do io
-        while !eof(io)
-            line = readline(io)
-            if !iscommentline(line)
-                colvars = ColVar.(fields(line))
-                vars = combine_colvars(colvars; options...)
-                var_value_dict = empty_var_value_dict(vars)
-                buffer = Vector{Float64}(sum(ncols, vars))
-                return _read_samples(io, vars, var_value_dict, buffer)
-            end
+function read_samples(io::IO)
+    while !eof(io)
+        line = readline(io)
+        if !iscommentline(line)
+            colvars = ColVar.(fields(line))
+            vars = combine_colvars(colvars)
+            vars_values = empty_vars_values(vars)
+            buffer = Vector{Float64}(undef, sum(ncols, vars))
+            return _read_samples(io, vars, vars_values, buffer)
         end
-        error("Could not find non-empty lines.")
     end
+    error("Could not find non-empty lines.")
 end
+
+"""
+$(SIGNATURES)
+
+Read Stan samples from a CSV file or a `IO` stream.
+
+
+"""
+read_samples(filename::AbstractString) = open(read_samples, filename, "r")
 
 end # module
