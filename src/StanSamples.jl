@@ -1,41 +1,59 @@
 module StanSamples
 
-using ArgCheck
-using AutoHashEquals
-
 export read_samples
 
-"""
-Test if the argument is a comment line in Stan sample output.
-"""
-iscommentline(s::String) = ismatch(r"^ *#", s)
+using ArgCheck: @argcheck
+using DocStringExtensions: FIELDS, SIGNATURES, TYPEDEF
+
+####
+#### utilities
+####
 
 """
+$(SIGNATURES)
+
+Test if the argument is a comment line in Stan sample output.
+"""
+iscommentline(s::String) = occursin(r"^ *#", s)
+
+"""
+$(SIGNATURES)
+
 Return the fields of a line in Stan sample output. The format is CSV,
 but never quoted or escaped, so splitting on `,` is sufficient.
 """
 fields(line::String) = split(chomp(line), ',')
 
 """
+$(SIGNATURES)
+
 Specification of a variable in the column of the posterior sample.
 
 # Fields
-- `name` is the name
-- `index` is the indices following it (may be empty).
+
+$(FIELDS)
 """
-@auto_hash_equals struct ColVar{N}
+struct ColVar{N}
+    "variable name"
     name::Symbol
+    "index (may be empty)"
     index::CartesianIndex{N}
 end
 
 ColVar(name::Symbol, index::Int...) = ColVar(name, CartesianIndex(tuple(index...)))
 
-"Test if two `ColVar`s can be merged (same `name` and number of indices)."
+"""
+$(SIGNATURES)
+
+Test if two `ColVar`s can be merged (same `name` and number of indices).
+"""
 ≅(::ColVar, ::ColVar) = false
-≅{N}(v1::ColVar{N}, v2::ColVar{N}) = v1.name == v2.name
+≅(v1::ColVar{N}, v2::ColVar{N}) where {N} = v1.name == v2.name
 
 """
-Parse a string as a column variable. 
+$(SIGNATURES)
+
+Parse a string as a column variable.
 """
 function ColVar(s::AbstractString)
     s = split(s, ".")
@@ -46,15 +64,15 @@ function ColVar(s::AbstractString)
 end
 
 """
-    combined_size(indexes)
+    $(SIGNATURES)
 
 For a vector of indexes, calculate the size (the largest one) and
 check that they are contiguous and column-major. Return a tuple of
-`Int`s, which is empty for scalars.
+`Int`s (empty for scalars.)
 """
 function combined_size(indexes)
     siz = reduce(max, indexes)
-    ran = CartesianRange(siz)
+    ran = CartesianIndices(siz)
     # FIXME inelegant collect below
     @argcheck collect(indexes) == vec(collect(ran)) "Non-contiguous indexes."
     siz.I
@@ -68,6 +86,8 @@ field. Determines the type of the resulting values.
 abstract type StanVar end
 
 """
+$(TYPEDEF)
+
 A scalar (always Float64).
 """
 struct StanScalar <: StanVar
@@ -75,6 +95,8 @@ struct StanScalar <: StanVar
 end
 
 """
+$(TYPEDEF)
+
 An array (always of Float64 elements).
 """
 struct StanArray{N} <: StanVar
@@ -86,18 +108,24 @@ end
 StanArray(name::Symbol, size::Int...) = StanArray(name, size)
 
 """
-Type of the value that corresponds to a `Var`.
+$(SIGNATURES)
+
+Type of the value that corresponds to a [`StanVar`](@ref).
 """
 valuetype(::StanScalar) = Float64
-valuetype{N}(::StanArray{N}) = Array{Float64, N}
+valuetype(::StanArray{N}) where {N} = Array{Float64, N}
 
 """
-Number of columns that correspond to the variable.
+$(SIGNATURES)
+
+Number of columns that correspond to a [`StanVar`](@ref).
 """
 ncols(::StanScalar) = 1
 ncols(sa::StanArray) = prod(sa.size)
 
 """
+$(SIGNATURES)
+
 Combine column variables into a Stan variable.
 
 For the documentation of `options`, see [`combine_colvars`](@ref).
@@ -105,7 +133,7 @@ For the documentation of `options`, see [`combine_colvars`](@ref).
 function _combine_colvars(colvars; options...)
     var = first(colvars)
     len = findfirst(v -> !(v ≅ var), colvars)
-    len = len == 0 ? length(colvars) : len-1
+    len = len ≡ nothing ? length(colvars) : len - 1
     siz = combined_size(v.index for v in colvars[1:len])
     if isempty(siz)
         StanScalar(var.name)
@@ -115,7 +143,7 @@ function _combine_colvars(colvars; options...)
 end
 
 """
-    combine_colvars(colvars; options...)
+    $(SIGNATURES)
 
 Combine column variables, returning a vector of `StanVar`s.
 
@@ -141,7 +169,7 @@ Read values for `var` from `buffer`, starting at index `1`.
 _read_values(var::StanScalar, buffer) = buffer[1]
 
 function _read_values(var::StanArray, buffer)
-    a = Array{Float64}(var.size...)
+    a = Array{Float64}(undef, var.size...)
     a[:] .= buffer[1:length(a)]
     a
 end
@@ -208,7 +236,7 @@ function read_samples(filename; options...)
                 colvars = ColVar.(fields(line))
                 vars = combine_colvars(colvars; options...)
                 var_value_dict = empty_var_value_dict(vars)
-                buffer = Vector{Float64}(sum(ncols, vars))
+                buffer = Vector{Float64}(undef, sum(ncols, vars))
                 return _read_samples(io, vars, var_value_dict, buffer)
             end
         end

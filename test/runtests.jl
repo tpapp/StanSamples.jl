@@ -13,7 +13,7 @@ import StanSamples:
     empty_var_value_dict,
     _read_values,
     read_values
-using Base.Test
+using Test
 
 @testset "raw reading" begin
     @test iscommentline("# this is a comment")
@@ -71,10 +71,10 @@ end
 
 @testset "empty var dictionary" begin
     vars = [StanScalar(:A), StanArray(:B,1), StanArray(:C,1,2), StanArray(:D,1,2,3)]
-    @test empty_var_value_dict(vars) == Dict(:A => Vector{Float64}(0),
-                                             :B => Vector{Vector{Float64}}(0),
-                                             :C => Vector{Matrix{Float64}}(0),
-                                             :D => Vector{Array{Float64, 3}}(0))
+    @test empty_var_value_dict(vars) == Dict(:A => Vector{Float64}(),
+                                             :B => Vector{Vector{Float64}}(),
+                                             :C => Vector{Matrix{Float64}}(),
+                                             :D => Vector{Array{Float64, 3}}())
 end
 
 @testset "_read_values" begin
@@ -96,7 +96,7 @@ end
     vars = [StanScalar(:a), StanArray(:b, 3), StanArray(:c, 2, 2)]
     @test sum(ncols, vars) == 8
     vars_values = empty_var_value_dict(vars)
-    buffer = Vector{Float64}(sum(ncols, vars))
+    buffer = Vector{Float64}(undef, sum(ncols, vars))
     @test read_values(io, vars, vars_values, buffer)
     @test vars_values == Dict(:a => [1.0], :b => [[2.0, 3.0, 4.0]],
                               :c => [[5.0 7.0; 6.0 8.0]])
@@ -111,7 +111,7 @@ end
 end
 
 @testset "read samples" begin
-    samples = read_samples(Pkg.dir("StanSamples", "test", "testmodel", "test-samples-1.csv"))
+    samples = read_samples(joinpath(@__DIR__, "testmodel", "test-samples-1.csv"))
     scalar_vars = [:lp__,:accept_stat__,:stepsize__,:treedepth__,:n_leapfrog__,
                    :divergent__,:energy__,:mu,:sigma, :nu]
     @test Set(keys(samples)) == Set(vcat(scalar_vars, :alpha))
