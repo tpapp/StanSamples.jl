@@ -99,12 +99,17 @@ end
     @test_throws ArgumentError read_values(io, vars, vars_values, buffer)
 end
 
-@testset "read samples simple" begin
-    io = IOBuffer("""
+"Simple samples we use for testing."
+const SAMPLES_SIMPLE = """
+# a comment
 a,b.1,b.2,c.1.1,c.2.1,c.1.2,c.2.2
 1.0,2.0,3.0,4.0,5.0,6.0,7.0
 8.0,9.0,10.0,11.0,12.0,13.0,14.0
-""")
+# a terminating comment
+"""
+
+@testset "read samples simple" begin
+    io = IOBuffer(SAMPLES_SIMPLE)
     samples = read_samples(io)
     @test samples.a == [1.0, 8.0]
     @test samples.b == permutedims([2.0 3.0;
@@ -136,4 +141,11 @@ end
 """)
         @test_throws ErrorException read_samples(path)
     end
+end
+
+@testset "sample matrix" begin
+    io = IOBuffer(SAMPLES_SIMPLE)
+    header, matrix = read_sample_matrix(io)
+    @test header == ["a", "b.1", "b.2", "c.1.1", "c.2.1", "c.1.2", "c.2.2"]
+    @test matrix == permutedims(reshape(1:14, :, 2))
 end

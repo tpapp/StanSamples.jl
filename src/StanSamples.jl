@@ -2,11 +2,11 @@
 Read Stan samples from a CSV file. Columns that belong to the same variable are grouped into
 arrays.
 
-The single exported function is [`read_samples`](@ref).
+The exported functions are [`read_samples`](@ref) and [`read_sample_matrix`](@ref).
 """
 module StanSamples
 
-export read_samples
+export read_samples, read_sample_matrix
 
 using ArgCheck: @argcheck
 using DocStringExtensions: FIELDS, SIGNATURES, TYPEDEF
@@ -247,9 +247,9 @@ $(SIGNATURES)
 
 Read Stan samples from a CSV file or a `IO` stream.
 
-Return a container of arrays, accessed by variables names (eg like a `NamedTuple`, which is
-in fact the current implementation, but can possibly change). Each array has samples for a
-variable, with the last index varying for each draw.
+Return a container of arrays, accessed by variables names as properties (eg like a
+`NamedTuple`, which is in fact the current implementation, but can possibly change). Each
+array has samples for a variable, with the last index varying for each draw.
 
 ```jldoctest
 julia> io = IOBuffer("a,b.1,b.2,c.1.1,c.2.1,c.1.2,c.2.2\n" *
@@ -280,5 +280,57 @@ julia> samples.c
 ```
 """
 read_samples(filename::AbstractString) = open(read_samples, filename, "r")
+
+function _read_sample_matrix!(samples, io)
+    n = size(samples, 1)
+    while !eof(io)
+        line = readline(io)
+        iscommentline(line) && continue
+        sample = parse.(Float64, fields(line))
+        @argcheck length(sample) == n "Expected $(n) fields in $(line)"
+        append!(samples, sample)
+    end
+    samples
+end
+
+function read_sample_matrix(io::IO)
+    while !eof(io)
+        line = readline(io)
+        iscommentline(line) && continue
+        header = fields(line)
+        samples = ElasticArray{Float64}(undef, length(header), 0)
+        return header, collect(PermutedDimsArray(_read_sample_matrix!(samples, io), (2, 1)))
+    end
+end
+
+"""
+$(SIGNATURES)
+
+Read Stan samples from a CSV file or a `IO` stream. Return the header (a vector of strings,
+containing variables names) and the sample as an `AbstractMatrix{Float64}`
+
+```jldoctest
+julia> io = IOBuffer("a,b.1,b.2,c.1.1,c.2.1,c.1.2,c.2.2\n" *
+       "1.0,2.0,3.0,4.0,5.0,6.0,7.0\n" *
+       "8.0,9.0,10.0,11.0,12.0,13.0,14.0");
+
+julia> header, matrix = read_sample_matrix(io);
+
+julia> header
+7-element Vector{SubString{String}}:
+ "a"
+ "b.1"
+ "b.2"
+ "c.1.1"
+ "c.2.1"
+ "c.1.2"
+ "c.2.2"
+
+julia> matrix
+2×7 Matrix{Float64}:
+ 1.0  2.0   3.0   4.0   5.0   6.0   7.0
+ 8.0  9.0  10.0  11.0  12.0  13.0  14.0
+"""
+read_sample_matrix(filename::AbstractString) = open(read_sample_matrix, filename, "r")
 
 end # module
