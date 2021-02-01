@@ -4,5 +4,6 @@
 /test/testmodel/test
 /test/testmodel/test.data.R
 /test/testmodel/test.hpp
+/Manifest.toml
 /deps/deps.jl
 /docs/build
