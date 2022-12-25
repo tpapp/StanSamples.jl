@@ -1,7 +1,7 @@
 name = "StanSamples"
 uuid = "52d0d7a9-b304-5f31-a727-b234d0b606ff"
 authors = ["Tamas K. Papp <tkpapp@gmail.com>"]
-version = "0.2.0"
+version = "0.2.1"
 
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
@@ -11,7 +11,7 @@ ElasticArrays = "fdbdab4c-e67f-52f5-8c3f-e7b388dad3d4"
 [compat]
 julia = "^1"
 ArgCheck = "1, 2"
-DocStringExtensions = "0.8"
+DocStringExtensions = "0.8, 0.9"
 ElasticArrays = "1"
 
 [extras]
